@@ -162,6 +162,7 @@ def construct_path(output_root: str, exp_name: str) -> dict:
 
     pth_path = os.path.join(exp_path, "pth")
     state_file = os.path.join(pth_path, "state.pth")
+    best_state_file = os.path.join(pth_path, "best_state.pth")
 
     log_file = os.path.join(exp_path, "log.txt")
     cfg_file = os.path.join(exp_path, "cfg.py")
@@ -176,6 +177,7 @@ def construct_path(output_root: str, exp_name: str) -> dict:
         "save": save_path,
         "pth": pth_path,
         "state": state_file,
+        "best": best_state_file,
         "log": log_file,
         "cfg": cfg_file,
         "trainer": trainer_file,

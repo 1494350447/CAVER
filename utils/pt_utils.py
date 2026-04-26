@@ -64,3 +64,53 @@ def get_device(x):
         return next(x.parameters()).device
     else:
         raise NotImplementedError
+
+
+class ModelEMA:
+    """维护学生模型的指数滑动平均权重。"""
+
+    def __init__(self, model, decay=0.9998, exclude_prefixes=("teacher_adapter.teacher.",)):
+        self.decay = float(decay)
+        self.exclude_prefixes = tuple(exclude_prefixes)
+        self.shadow_state = {}
+        self.backup_state = {}
+        self._capture(model=model)
+
+    def _should_track(self, key):
+        return not any(key.startswith(prefix) for prefix in self.exclude_prefixes)
+
+    def _capture(self, model):
+        for key, value in model.state_dict().items():
+            if self._should_track(key):
+                self.shadow_state[key] = value.detach().clone()
+
+    @torch.no_grad()
+    def update(self, model):
+        model_state = model.state_dict()
+        for key, value in model_state.items():
+            if not self._should_track(key):
+                continue
+            if key not in self.shadow_state:
+                self.shadow_state[key] = value.detach().clone()
+                continue
+            if torch.is_floating_point(value):
+                self.shadow_state[key].mul_(self.decay).add_(value.detach(), alpha=1.0 - self.decay)
+            else:
+                self.shadow_state[key].copy_(value.detach())
+
+    @torch.no_grad()
+    def apply_to(self, model):
+        self.backup_state = {}
+        model_state = model.state_dict()
+        for key, value in self.shadow_state.items():
+            self.backup_state[key] = model_state[key].detach().clone()
+            model_state[key].copy_(value)
+
+    @torch.no_grad()
+    def restore(self, model):
+        if not self.backup_state:
+            return
+        model_state = model.state_dict()
+        for key, value in self.backup_state.items():
+            model_state[key].copy_(value)
+        self.backup_state = {}

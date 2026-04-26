@@ -1,0 +1,85 @@
+{
+  "figure_mode": "evidence",
+  "title": "图3.9 M3FD数据集上第三章核心模块的可解释性与定性证据图",
+  "subtitle": "三行样例均来自 M3FD_VAL。请先用 mine 子命令筛出候选，再替换 image_id 与 zoom_box。",
+  "rows": [
+    {
+      "module": "spd_dre",
+      "row_title": "SPD-DRE：先验引导解耦提升弱小目标可分性",
+      "split": "test",
+      "dataset_name": "M3FD_VAL",
+      "sample": {
+        "image_id": 3360
+      },
+      "zoom_box": [
+        140,
+        180,
+        320,
+        340
+      ],
+      "inference": {
+        "score_thr": 0.03,
+        "nms_iou_thr": 0.5
+      },
+      "gt_title": "GT + Zoom",
+      "full_title": "Full Model Prediction",
+      "full_run": {
+        "config": "/root/CAVER/output_chapter3_m3fd_recover/SAM2PriorAlignmentYOLODetector_768x1024_BS3_E30_AMPn_LR6e-05_OTall_OPadamw_LTcos_INFOm3fd_recover_resume/exp_1/cfg.py",
+        "checkpoint": "/root/CAVER/output_chapter3_m3fd_recover/SAM2PriorAlignmentYOLODetector_768x1024_BS3_E30_AMPn_LR6e-05_OTall_OPadamw_LTcos_INFOm3fd_recover_resume/exp_1/pth/best_state.pth",
+        "model_name": "SAM2PriorAlignmentYOLODetector"
+      }
+    },
+    {
+      "module": "fddsa",
+      "row_title": "F-DDSA：动态空间对齐抑制错位与虚警",
+      "split": "test",
+      "dataset_name": "M3FD_VAL",
+      "sample": {
+        "image_id": 3361
+      },
+      "zoom_box": [
+        180,
+        220,
+        420,
+        420
+      ],
+      "inference": {
+        "score_thr": 0.03,
+        "nms_iou_thr": 0.5
+      },
+      "gt_title": "GT + Zoom",
+      "full_title": "Full Model Prediction",
+      "full_run": {
+        "config": "/root/CAVER/output_chapter3_m3fd_recover/SAM2PriorAlignmentYOLODetector_768x1024_BS3_E30_AMPn_LR6e-05_OTall_OPadamw_LTcos_INFOm3fd_recover_resume/exp_1/cfg.py",
+        "checkpoint": "/root/CAVER/output_chapter3_m3fd_recover/SAM2PriorAlignmentYOLODetector_768x1024_BS3_E30_AMPn_LR6e-05_OTall_OPadamw_LTcos_INFOm3fd_recover_resume/exp_1/pth/best_state.pth",
+        "model_name": "SAM2PriorAlignmentYOLODetector"
+      }
+    },
+    {
+      "module": "hfsd",
+      "row_title": "HFSD：频域任务分工提升分类稳定性与边界定位",
+      "split": "test",
+      "dataset_name": "M3FD_VAL",
+      "sample": {
+        "image_id": 3362
+      },
+      "zoom_box": [
+        200,
+        160,
+        460,
+        360
+      ],
+      "inference": {
+        "score_thr": 0.03,
+        "nms_iou_thr": 0.5
+      },
+      "gt_title": "GT + Zoom",
+      "full_title": "Full Model Prediction",
+      "full_run": {
+        "config": "/root/CAVER/output_chapter3_m3fd_recover/SAM2PriorAlignmentYOLODetector_768x1024_BS3_E30_AMPn_LR6e-05_OTall_OPadamw_LTcos_INFOm3fd_recover_resume/exp_1/cfg.py",
+        "checkpoint": "/root/CAVER/output_chapter3_m3fd_recover/SAM2PriorAlignmentYOLODetector_768x1024_BS3_E30_AMPn_LR6e-05_OTall_OPadamw_LTcos_INFOm3fd_recover_resume/exp_1/pth/best_state.pth",
+        "model_name": "SAM2PriorAlignmentYOLODetector"
+      }
+    }
+  ]
+}

@@ -6,219 +6,131 @@ import shutil
 from datetime import datetime
 from functools import partial
 
-import albumentations as A
-import cv2
-import numpy as np
 import torch
+import torch.nn as nn
 from mmengine import Config
-from tqdm import tqdm
 
-import datasets
-import method as model_lib
-from method.mssim import ssim
-from utils import constructor, ops, pt_utils, py_utils
-from utils.data import get_data_from_txt, get_datasets_info_with_keys, read_binary_array, read_color_array
-from utils.recorder import AvgMeter, CalTotalMetric, MsgLogger, TimeRecoder
+import models as models_lib
+import tasks as task_lib
+from utils import constructor, pt_utils, py_utils
+from utils.recorder import AvgMeter, MsgLogger, TimeRecoder
 
 
-def iou(prob, gt):
-    inter = torch.sum(gt * prob, dim=(1, 2, 3))
-    union = gt.sum(dim=(1, 2, 3)) + prob.sum(dim=(1, 2, 3)) - inter
-    iou = inter / union
-    return iou.mean()
+def get_checkpoint_state_dict(model):
+    state_dict = model.state_dict()
+    return {key: value for key, value in state_dict.items() if not key.startswith("teacher_adapter.teacher.")}
 
 
-class TrDataset(torch.utils.data.Dataset):
-    def __init__(self, root, shape, extra_scales=None):
-        super().__init__()
-        if extra_scales is not None:
-            self.scales = (1,) + tuple(extra_scales)
-
-        self.total_paths = []
-        for dataset_name, dataset_info in root.items():
-            image_root = dataset_info["image"]["path"]
-            image_suffix = dataset_info["image"]["suffix"]
-            mask_root = dataset_info["mask"]["path"]
-            mask_suffix = dataset_info["mask"]["suffix"]
-            depth_root = dataset_info["depth"]["path"]
-            depth_suffix = dataset_info["depth"]["suffix"]
-            if "index_file" in dataset_info:
-                valid_names = get_data_from_txt(dataset_info["index_file"])
-            else:
-                image_names = [x[: -len(image_suffix)] for x in os.listdir(image_root)]
-                mask_names = [x[: -len(mask_suffix)] for x in os.listdir(mask_root)]
-                depth_names = [x[: -len(depth_suffix)] for x in os.listdir(depth_root)]
-                valid_names = list(set(image_names).intersection(mask_names).intersection(depth_names))
-
-            for valid_name in sorted(valid_names):
-                s = (
-                    os.path.join(image_root, valid_name + image_suffix),
-                    os.path.join(mask_root, valid_name + mask_suffix),
-                    os.path.join(depth_root, valid_name + depth_suffix),
-                )
-                self.total_paths.append(s)
-            print(f"Loading data from {dataset_name} with {len(valid_names)} samples.")
-
-        self.joint_trans = A.Compose(
-            [
-                A.Resize(height=shape["h"], width=shape["w"]),
-                A.ShiftScaleRotate(shift_limit=0.0625, scale_limit=0.1, rotate_limit=90),
-                A.HorizontalFlip(p=0.5),
-                A.ColorJitter(p=0.75),
-                A.Normalize(),
-            ],
-            additional_targets=dict(depth="mask"),  # For RGBD dataset
-        )
-
-    def __len__(self):
-        return len(self.total_paths)
-
-    def __getitem__(self, index):
-        image_path, mask_path, depth_path = self.total_paths[index]
-
-        image = read_color_array(image_path)
-        mask = read_binary_array(mask_path, to_normalize=True, thr=0.5)
-        depth = read_binary_array(depth_path, to_normalize=True, thr=-1)
-
-        transformed = self.joint_trans(image=image, mask=mask, depth=depth)
-        image = transformed["image"]
-        mask = transformed["mask"]
-        depth = transformed["depth"]
-
-        image_tensor = torch.from_numpy(image).permute(2, 0, 1)
-        mask_tensor = torch.from_numpy(mask).unsqueeze(0)
-        depth_tensor = torch.from_numpy(depth).unsqueeze(0)
-
-        return dict(image=image_tensor, mask=mask_tensor, depth=depth_tensor)
+def get_primary_metric_name(task):
+    return getattr(task, "primary_metric_name", task.metric_names[0])
 
 
-class TeDataset(torch.utils.data.Dataset):
-    def __init__(self, root, shape):
-        super().__init__()
-        self.datasets = get_datasets_info_with_keys(dataset_infos=root, extra_keys=["mask", "depth"])
-        self.image_paths = self.datasets["image"]
-        self.mask_paths = self.datasets["mask"]
-        self.depth_paths = self.datasets["depth"]
-
-        self.joint_trans = A.Compose([A.Resize(height=shape["h"], width=shape["w"]), A.Normalize()])
-
-    def __len__(self):
-        return len(self.image_paths)
-
-    def __getitem__(self, index):
-        image_path = self.image_paths[index]
-        mask_path = self.mask_paths[index]
-        depth_path = self.depth_paths[index]
-
-        image = read_color_array(image_path)
-        depth = read_binary_array(depth_path, to_normalize=True, thr=-1)
-
-        transformed = self.joint_trans(image=image, mask=depth)
-        image = transformed["image"]
-        depth = transformed["mask"]
-
-        image_tensor = torch.from_numpy(image).permute(2, 0, 1)
-        depth_tensor = torch.from_numpy(depth).unsqueeze(0)
-
-        return dict(
-            image=image_tensor,
-            depth=depth_tensor,
-            image_info=dict(mask_path=mask_path, mask_name=os.path.basename(mask_path)),
-        )
+def is_better_result(candidate, best, primary_metric_name):
+    if best is None:
+        return True
+    candidate_primary = float(candidate.get(primary_metric_name, float("-inf")))
+    best_primary = float(best.get(primary_metric_name, float("-inf")))
+    if candidate_primary != best_primary:
+        return candidate_primary > best_primary
+    candidate_map50 = float(candidate.get("mAP50", float("-inf")))
+    best_map50 = float(best.get("mAP50", float("-inf")))
+    if candidate_map50 != best_map50:
+        return candidate_map50 > best_map50
+    return float(candidate.get("Precision", float("-inf"))) > float(best.get("Precision", float("-inf")))
 
 
-@torch.no_grad()
-def eval_once(model, data_loader, save_path="", show_bar=True):
-    model.eval()
-    cal_total_seg_metrics = CalTotalMetric()
-
-    bar_iter = enumerate(data_loader)
-    if show_bar:
-        bar_iter = tqdm(bar_iter, total=len(data_loader), leave=False, ncols=79)
-    for batch_id, batch in bar_iter:
-        images = batch["image"].cuda(non_blocking=True)
-        depths = batch["depth"].cuda(non_blocking=True)
-        logits = model(data=dict(image=images, depth=depths))
-        probs = logits.sigmoid().squeeze(1).cpu().detach().numpy()
-
-        for i, pred in enumerate(probs):
-            mask_path = batch["image_info"]["mask_path"][i]
-            mask_array = read_binary_array(mask_path, dtype=np.uint8)
-            mask_h, mask_w = mask_array.shape
-
-            pred = cv2.resize(pred, dsize=(mask_w, mask_h), interpolation=cv2.INTER_LINEAR)  # 0~1
-
-            if save_path:  # 这里的save_path包含了数据集名字
-                pred_name = os.path.splitext(batch["image_info"]["mask_name"][i])[0] + ".png"
-                ops.save_array_as_image(data_array=pred, save_name=pred_name, save_dir=save_path)
-
-            pred = (pred * 255).astype(np.uint8)
-            cal_total_seg_metrics.step(pred, mask_array, mask_path)
-    return cal_total_seg_metrics.get_results()
+def freeze_backbone_bn(model):
+    actual_model = model.module if hasattr(model, "module") else model
+    backbone = getattr(actual_model, "backbone", None)
+    if backbone is None:
+        return
+    for module in backbone.modules():
+        if isinstance(module, nn.modules.batchnorm._BatchNorm):
+            module.eval()
+            for param in module.parameters():
+                param.requires_grad = False
 
 
-def testing(model, msg_logger, cfg):
+def save_model_state(model, save_path, ema=None):
+    if ema is not None:
+        ema.apply_to(model)
+    try:
+        torch.save(get_checkpoint_state_dict(model), save_path)
+    finally:
+        if ema is not None:
+            ema.restore(model)
+
+
+def testing(
+    model,
+    task,
+    msg_logger,
+    cfg,
+    save_predictions=True,
+    row_name=None,
+    log_prefix="Test",
+    calibrate_inference=False,
+):
     msg_logger(name="log", msg="\n", show=False)
 
-    csv_row = [cfg.exp_name]
-    for te_data_name in cfg.data.test.name:
-        te_data_path = datasets.__dict__[te_data_name]
-        te_dataset = TeDataset(root=(te_data_name, te_data_path), shape=cfg.data.test.shape)
-        te_loader = torch.utils.data.DataLoader(
-            dataset=te_dataset,
+    if row_name is None:
+        row_name = cfg.exp_name
+    csv_row = [row_name]
+    aggregate_results = {}
+    for dataset_name in cfg.data.test.name:
+        test_dataset, dataset_info = task.build_test_dataset(dataset_name=dataset_name, cfg=cfg)
+        test_loader = torch.utils.data.DataLoader(
+            dataset=test_dataset,
             batch_size=cfg.args.batch_size,
             num_workers=cfg.args.num_workers,
             pin_memory=True,
+            collate_fn=task.get_collate_fn(split="test"),
         )
-        print(f"Testing on {te_data_name} with {len(te_dataset)} samples")
-        pred_save_path = os.path.join(cfg.path.save, te_data_name)
-        seg_results = eval_once(model=model, save_path=pred_save_path, data_loader=te_loader, show_bar=cfg.show_bar)
-        msg_logger(name="log", msg=f"Results on {te_data_path}:\n{seg_results}")
+        print(f"{log_prefix} on {dataset_name} with {len(test_dataset)} samples")
+        pred_save_path = os.path.join(cfg.path.save, dataset_name) if save_predictions else ""
+        test_results = task.evaluate_once(
+            model=model,
+            save_path=pred_save_path,
+            data_loader=test_loader,
+            show_bar=cfg.show_bar,
+            calibrate_inference=calibrate_inference,
+        )
+        metric_msg = " ".join(f"{name}:{test_results[name]}" for name in task.metric_names)
+        msg_logger(name="log", msg=f"{log_prefix} [{dataset_name}] {metric_msg}")
+        for detail_line in task.format_eval_details(test_results):
+            msg_logger(name="log", msg=f"{log_prefix} [{dataset_name}] {detail_line}")
+        msg_logger(name="log", msg=f"Results on {dataset_info}:\n{test_results}", show=False)
 
-        csv_row.extend(list(seg_results.values()))
+        aggregate_results[dataset_name] = test_results
+        csv_row.extend([test_results[name] for name in task.metric_names])
 
-    # write the results into the csv file
     with open(cfg.path.csv, encoding="utf-8", mode="a", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(csv_row)
+    return aggregate_results
 
 
-def loss_func(logits, seg_gts):
-    losses = []
-    loss_str = []
-    # for main
-    bce_loss = torch.nn.functional.binary_cross_entropy_with_logits(input=logits, target=seg_gts, reduction="mean")
-    losses.append(bce_loss)
-    loss_str.append(f"bce:{bce_loss.item():.5f}")
-
-    prob = logits.sigmoid()
-    ssim_loss = 1 - ssim(prob, seg_gts)
-    losses.append(ssim_loss)
-    loss_str.append(f"ssim:{ssim_loss.item():.5f}")
-
-    ssim_loss = 1 - iou(prob, seg_gts)
-    losses.append(ssim_loss)
-    loss_str.append(f"iou:{ssim_loss.item():.5f}")
-    return sum(losses), " ".join(loss_str)
-
-
-def training(model, msg_logger, cfg):
-    tr_data_paths = {n: datasets.__dict__[n] for n in cfg.data.train.name}
-    tr_dataset = TrDataset(root=tr_data_paths, shape=cfg.data.train.shape)
-    tr_loader = torch.utils.data.DataLoader(
-        dataset=tr_dataset,
+def training(model, task, msg_logger, cfg):
+    train_dataset = task.build_train_dataset(cfg=cfg)
+    train_sampler = task.get_train_sampler(train_dataset=train_dataset, cfg=cfg)
+    train_loader = torch.utils.data.DataLoader(
+        dataset=train_dataset,
         batch_size=cfg.args.batch_size,
         num_workers=cfg.args.num_workers,
-        shuffle=True,
+        shuffle=train_sampler is None,
+        sampler=train_sampler,
         drop_last=True,
         pin_memory=True,
+        collate_fn=task.get_collate_fn(split="train"),
         worker_init_fn=None
         if cfg.args.base_seed < 0
         else partial(pt_utils.worker_init_fn, base_seed=cfg.args.base_seed),
     )
-    print(f"Training on {tuple(tr_data_paths.keys())} with {len(tr_dataset)} samples")
+    print(f"Training on {tuple(cfg.data.train.name)} with {len(train_dataset)} samples")
+    if train_sampler is not None:
+        print(f"train_sampler: {type(train_sampler).__name__}")
 
-    num_iter_per_epoch = len(tr_loader)
+    num_iter_per_epoch = len(train_loader)
     num_iter = cfg.args.epoch_num * num_iter_per_epoch
 
     optimizer = constructor.make_optim_with_cfg(model=model, optimizer_cfg=cfg.optimizers)
@@ -238,6 +150,15 @@ def training(model, msg_logger, cfg):
     )
 
     scaler = torch.cuda.amp.GradScaler(enabled=cfg.args.use_amp)
+    val_freq = int(cfg.args.get("val_freq", 0))
+    ema_cfg = cfg.get("ema", {})
+    ema = None
+    if ema_cfg.get("enable", False):
+        ema = pt_utils.ModelEMA(model=model, decay=ema_cfg.get("decay", 0.9998))
+    freeze_backbone_bn_flag = bool(cfg.get("freeze_backbone_bn", False))
+    primary_metric_name = get_primary_metric_name(task)
+    best_results = None
+    best_epoch = -1
 
     loss_recorder = AvgMeter()
     time_logger = TimeRecoder()
@@ -245,25 +166,28 @@ def training(model, msg_logger, cfg):
         time_logger.start(msg=cfg.exp_name)
         loss_recorder.reset()
         model.train()
+        if freeze_backbone_bn_flag:
+            freeze_backbone_bn(model)
 
-        for batch_idx, batch in enumerate(tr_loader):
+        for batch_idx, batch in enumerate(train_loader):
             curr_iter = epoch_idx * num_iter_per_epoch + batch_idx
             lr_adjustor(optimizer=optimizer, curr_idx=curr_iter)
 
-            images = batch["image"].cuda(non_blocking=True)
-            depths = batch["depth"].cuda(non_blocking=True)
-            masks = batch["mask"].cuda(non_blocking=True)
+            device_batch = task.move_batch_to_device(batch)
             with torch.cuda.amp.autocast(enabled=cfg.args.use_amp):
-                logits = model(data=dict(image=images, depth=depths))
+                model_outputs = model(data=task.get_model_inputs(device_batch))
 
-            losses, losses_str = loss_func(logits=logits, seg_gts=masks)
+            losses, losses_str = task.compute_loss(model_outputs=model_outputs, batch=device_batch)
             scaler.scale(losses).backward()
             scaler.step(optimizer)
             scaler.update()
             optimizer.zero_grad()
+            if ema is not None:
+                ema.update(model)
 
             item_loss = losses.item()
-            loss_recorder.update(value=item_loss, num=images.size(0))
+            batch_size = batch["image"].size(0)
+            loss_recorder.update(value=item_loss, num=batch_size)
 
             fixed_step = batch_idx == 0 or (batch_idx + 1) == num_iter_per_epoch
             interval_step = cfg.args.print_freq > 0 and (
@@ -272,25 +196,74 @@ def training(model, msg_logger, cfg):
             if fixed_step or interval_step:
                 lr_string = ",".join([f"{x:10.3e}" for x in [group["lr"] for group in optimizer.param_groups]])
                 msg = (
-                    f"[{batch_idx}/{num_iter_per_epoch} {curr_iter}/{num_iter + num_iter_in_cooldown} {epoch_idx}/{cfg.args.epoch_num + cfg.cooldown_epoch_num}] "
-                    f"{list(images.shape)} Lr:{lr_string} M:{loss_recorder.avg:.5f}/C:{item_loss:.5f} "
+                    f"[{batch_idx}/{num_iter_per_epoch} {curr_iter}/{num_iter + num_iter_in_cooldown} "
+                    f"{epoch_idx}/{cfg.args.epoch_num + cfg.cooldown_epoch_num}] "
+                    f"{list(batch['image'].shape)} Lr:{lr_string} M:{loss_recorder.avg:.5f}/C:{item_loss:.5f} "
                     f"{losses_str}"
                 )
                 msg_logger(name="log", msg=msg, show=True)
 
             if curr_iter < 3:
-                py_utils.cvplot_results(
-                    dict(smap=logits.sigmoid(), img=batch["image"], dep=batch["depth"], msk=batch["mask"]),
-                    save_path=os.path.join(cfg.vis_path, f"iter-{curr_iter}.png"),
-                )
+                vis_data = task.get_visualization_data(model_outputs=model_outputs, batch=batch)
+                if vis_data:
+                    py_utils.cvplot_results(
+                        vis_data,
+                        save_path=os.path.join(cfg.vis_path, f"iter-{curr_iter}.png"),
+                    )
 
-        # 记录每个epoch最后一个batch的图像
-        py_utils.cvplot_results(
-            dict(smap=logits.sigmoid(), img=batch["image"], dep=batch["depth"], msk=batch["mask"]),
-            save_path=os.path.join(cfg.vis_path, f"epoch-{epoch_idx}.png"),
-        )
-        torch.save(model.state_dict(), cfg.path.state)
+        vis_data = task.get_visualization_data(model_outputs=model_outputs, batch=batch)
+        if vis_data:
+            py_utils.cvplot_results(
+                vis_data,
+                save_path=os.path.join(cfg.vis_path, f"epoch-{epoch_idx}.png"),
+            )
+        save_model_state(model=model, save_path=cfg.path.state, ema=ema)
         time_logger.now(pre_msg="An Epoch End...")
+
+        if val_freq > 0 and (epoch_idx + 1) % val_freq == 0:
+            if ema is not None:
+                ema.apply_to(model)
+            try:
+                val_results = testing(
+                    model=model,
+                    task=task,
+                    msg_logger=msg_logger,
+                    cfg=cfg,
+                    save_predictions=False,
+                    row_name=f"{cfg.exp_name}_epoch{epoch_idx + 1:03d}",
+                    log_prefix=f"Val@Epoch{epoch_idx + 1}",
+                    calibrate_inference=(epoch_idx + 1) >= int(cfg.get("val_sweep_start_epoch", 5)),
+                )
+            finally:
+                if ema is not None:
+                    ema.restore(model)
+
+            dataset_name = cfg.data.test.name[0]
+            curr_results = val_results[dataset_name]
+            if is_better_result(curr_results, best_results, primary_metric_name=primary_metric_name):
+                best_results = dict(curr_results)
+                best_epoch = epoch_idx + 1
+                save_model_state(model=model, save_path=cfg.path.best, ema=ema)
+                best_msg = (
+                    f"NewBest@Epoch{best_epoch} "
+                    + " ".join(f"{name}:{best_results[name]}" for name in task.metric_names)
+                )
+                msg_logger(name="log", msg=best_msg, show=True)
+
+    return dict(best_results=best_results, best_epoch=best_epoch)
+
+
+def initialize_result_csv(cfg, metric_names):
+    with open(cfg.path.csv, encoding="utf-8", mode="w", newline="") as f:
+        writer = csv.writer(f)
+
+        first_row = ["model_name"]
+        for dataset_name in cfg.data.test.name:
+            first_row.extend([dataset_name] + [" "] * (len(metric_names) - 1))
+        writer.writerow(first_row)
+
+        second_row = [" "] + list(metric_names) * len(cfg.data.test.name)
+        writer.writerow(second_row)
 
 
 def parse_config():
@@ -304,10 +277,20 @@ def parse_config():
     parser.add_argument("--evaluate", action="store_true")
     parser.add_argument("--show-bar", action="store_true")
     parser.add_argument("--cooldown-epoch-num", type=int, default=0)
+    parser.add_argument("--base-seed", type=int)
     args = parser.parse_args()
 
     cfg = Config.fromfile(args.config, use_predefined_variables=False)
-    cfg.merge_from_dict(vars(args))
+    cfg.output_root = args.output_root
+    cfg.model_name = args.model_name
+    cfg.load_from = args.load_from if args.load_from is not None else cfg.get("load_from", None)
+    cfg.pretrained = args.pretrained if args.pretrained is not None else cfg.get("pretrained", None)
+    cfg.info = args.info if args.info is not None else cfg.get("info", None)
+    cfg.evaluate = args.evaluate
+    cfg.show_bar = args.show_bar
+    cfg.cooldown_epoch_num = args.cooldown_epoch_num
+    if args.base_seed is not None:
+        cfg.args.base_seed = int(args.base_seed)
 
     cfg.exp_name = py_utils.construct_exp_name(config=cfg)
     if cfg.cooldown_epoch_num > 0:
@@ -329,18 +312,6 @@ def parse_config():
     if os.path.exists(cfg.vis_path):
         shutil.rmtree(cfg.vis_path)
     os.makedirs(cfg.vis_path)
-
-    metric_names = ["Smeasure", "wFmeasure", "MAE", "adpEm", "meanEm", "maxEm", "adpFm", "meanFm", "maxFm"]
-    with open(cfg.path.csv, encoding="utf-8", mode="w", newline="") as f:
-        writer = csv.writer(f)
-
-        first_row = ["model_name"]
-        for dataset_name in cfg.data.test.name:
-            first_row.extend([dataset_name] + [" "] * (len(metric_names) - 1))
-        writer.writerow(first_row)
-
-        second_row = [" "] + metric_names * len(cfg.data.test.name)
-        writer.writerow(second_row)
     return cfg
 
 
@@ -350,23 +321,64 @@ def main():
     print(f"[{datetime.now()}] {cfg.path.exp} with base_seed {cfg.args.base_seed}")
 
     msg_logger = MsgLogger(log=cfg.path.log)
+    task = task_lib.build_task(cfg)
+    initialize_result_csv(cfg=cfg, metric_names=task.metric_names)
+    msg_logger(name="log", msg=f"task: {task.name}")
 
-    if hasattr(model_lib, cfg.model_name):
-        ModuleClass = getattr(model_lib, cfg.model_name)
-        model = ModuleClass(pretrained=cfg.pretrained)
-        msg_logger(name="log", msg=inspect.getsource(ModuleClass))
+    model_kwargs = dict(cfg.get("model", {}))
+    model_kwargs.pop("name", None)
+    model_kwargs.pop("pretrained", None)
+
+    if hasattr(models_lib, cfg.model_name):
+        module_class = getattr(models_lib, cfg.model_name)
     else:
-        raise ModuleNotFoundError(f"Please add <{cfg.model_name}> into the __init__.py.")
+        import method as model_lib
+
+        if hasattr(model_lib, cfg.model_name):
+            module_class = getattr(model_lib, cfg.model_name)
+        else:
+            raise ModuleNotFoundError(f"Please add <{cfg.model_name}> into models/__init__.py or method/__init__.py.")
+
+    model = module_class(pretrained=cfg.pretrained, **model_kwargs)
+    msg_logger(name="log", msg=inspect.getsource(module_class))
 
     if cfg.load_from:
-        model.load_state_dict(torch.load(cfg.load_from, map_location="cpu"))
+        checkpoint = torch.load(cfg.load_from, map_location="cpu")
+        incompatible = model.load_state_dict(checkpoint, strict=False)
         print(f"Loaded from {cfg.load_from}")
+        if incompatible.missing_keys:
+            print(f"Missing keys when loading checkpoint: {len(incompatible.missing_keys)}")
+        if incompatible.unexpected_keys:
+            print(f"Unexpected keys when loading checkpoint: {len(incompatible.unexpected_keys)}")
 
     model.cuda()
+    if cfg.get("freeze_backbone_bn", False):
+        freeze_backbone_bn(model)
     if not cfg.evaluate:
-        training(model=model, msg_logger=msg_logger, cfg=cfg)
+        train_summary = training(model=model, task=task, msg_logger=msg_logger, cfg=cfg)
+        if os.path.isfile(cfg.path.best):
+            best_checkpoint = torch.load(cfg.path.best, map_location="cpu")
+            incompatible = model.load_state_dict(best_checkpoint, strict=False)
+            print(f"Loaded best checkpoint from {cfg.path.best}")
+            if incompatible.missing_keys:
+                print(f"Missing keys when loading best checkpoint: {len(incompatible.missing_keys)}")
+            if incompatible.unexpected_keys:
+                print(f"Unexpected keys when loading best checkpoint: {len(incompatible.unexpected_keys)}")
+        if train_summary["best_results"] is not None:
+            best_msg = (
+                f"BestSummary@Epoch{train_summary['best_epoch']} "
+                + " ".join(f"{name}:{train_summary['best_results'][name]}" for name in task.metric_names)
+            )
+            msg_logger(name="log", msg=best_msg, show=True)
 
-    testing(model=model, msg_logger=msg_logger, cfg=cfg)
+    testing(
+        model=model,
+        task=task,
+        msg_logger=msg_logger,
+        cfg=cfg,
+        row_name=f"{cfg.exp_name}_best" if os.path.isfile(cfg.path.best) else cfg.exp_name,
+        calibrate_inference=not cfg.evaluate,
+    )
     print(f"{datetime.now()}: End training...")
 
 

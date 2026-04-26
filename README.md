@@ -30,6 +30,10 @@
 - Predictions: https://github.com/lartpang/CAVER/releases/tag/rgbd-rgbt-results
 - Pre-trained parameters: https://github.com/lartpang/CAVER/releases/tag/rgbd-rgbt-models
 
+## Architecture
+
+- See `ARCHITECTURE.md` for the code-level architecture map and the new task extension boundary.
+
 ## Usage
 
 ### Prepare

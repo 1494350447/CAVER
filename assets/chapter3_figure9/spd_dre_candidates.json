@@ -1,0 +1,345 @@
+{
+  "mode": "evidence",
+  "module": "spd_dre",
+  "dataset_name": "M3FD_VAL",
+  "split": "test",
+  "infer_cfg": {
+    "score_thr": 0.03,
+    "nms_iou_thr": 0.5,
+    "pre_nms_topk": 1000,
+    "max_per_img": 300
+  },
+  "topk": [
+    {
+      "index": 474,
+      "image_id": 3834,
+      "file_name": "03834.png",
+      "score": 4.980973,
+      "prediction": {
+        "tp": 4,
+        "fp": 95,
+        "fn": 0,
+        "best_iou": 0.9530516862869263,
+        "num_gt": 4,
+        "num_pred": 99,
+        "matched_gt_ratio": 1.0
+      },
+      "evidence": {
+        "best_iou": 0.9530516862869263,
+        "matched_gt_ratio": 1.0,
+        "prior_cos": 0.9970003366470337,
+        "spatial_contrast": 0.3170536160469055,
+        "frequency_contrast": 0.11640084534883499
+      }
+    },
+    {
+      "index": 805,
+      "image_id": 4165,
+      "file_name": "04165.png",
+      "score": 4.972734,
+      "prediction": {
+        "tp": 7,
+        "fp": 68,
+        "fn": 0,
+        "best_iou": 0.9713788032531738,
+        "num_gt": 7,
+        "num_pred": 75,
+        "matched_gt_ratio": 1.0
+      },
+      "evidence": {
+        "best_iou": 0.9713788032531738,
+        "matched_gt_ratio": 1.0,
+        "prior_cos": 0.9978960156440735,
+        "spatial_contrast": 0.26812806725502014,
+        "frequency_contrast": 0.11398230493068695
+      }
+    },
+    {
+      "index": 762,
+      "image_id": 4122,
+      "file_name": "04122.png",
+      "score": 4.955796,
+      "prediction": {
+        "tp": 5,
+        "fp": 72,
+        "fn": 0,
+        "best_iou": 0.9471496343612671,
+        "num_gt": 5,
+        "num_pred": 77,
+        "matched_gt_ratio": 1.0
+      },
+      "evidence": {
+        "best_iou": 0.9471496343612671,
+        "matched_gt_ratio": 1.0,
+        "prior_cos": 0.997096061706543,
+        "spatial_contrast": 0.29469114542007446,
+        "frequency_contrast": 0.12469962984323502
+      }
+    },
+    {
+      "index": 760,
+      "image_id": 4120,
+      "file_name": "04120.png",
+      "score": 4.947636,
+      "prediction": {
+        "tp": 5,
+        "fp": 69,
+        "fn": 0,
+        "best_iou": 0.9432542324066162,
+        "num_gt": 5,
+        "num_pred": 74,
+        "matched_gt_ratio": 1.0
+      },
+      "evidence": {
+        "best_iou": 0.9432542324066162,
+        "matched_gt_ratio": 1.0,
+        "prior_cos": 0.9969966411590576,
+        "spatial_contrast": 0.27313509583473206,
+        "frequency_contrast": 0.1486373171210289
+      }
+    },
+    {
+      "index": 483,
+      "image_id": 3843,
+      "file_name": "03843.png",
+      "score": 4.935848,
+      "prediction": {
+        "tp": 4,
+        "fp": 98,
+        "fn": 0,
+        "best_iou": 0.9288523197174072,
+        "num_gt": 4,
+        "num_pred": 102,
+        "matched_gt_ratio": 1.0
+      },
+      "evidence": {
+        "best_iou": 0.9288523197174072,
+        "matched_gt_ratio": 1.0,
+        "prior_cos": 0.997077226638794,
+        "spatial_contrast": 0.2988281548023224,
+        "frequency_contrast": 0.14088115096092224
+      }
+    },
+    {
+      "index": 494,
+      "image_id": 3854,
+      "file_name": "03854.png",
+      "score": 4.921034,
+      "prediction": {
+        "tp": 6,
+        "fp": 79,
+        "fn": 0,
+        "best_iou": 0.9476750493049622,
+        "num_gt": 6,
+        "num_pred": 85,
+        "matched_gt_ratio": 1.0
+      },
+      "evidence": {
+        "best_iou": 0.9476750493049622,
+        "matched_gt_ratio": 1.0,
+        "prior_cos": 0.9963061213493347,
+        "spatial_contrast": 0.27454425394535065,
+        "frequency_contrast": 0.1037839949131012
+      }
+    },
+    {
+      "index": 398,
+      "image_id": 3758,
+      "file_name": "03758.png",
+      "score": 4.914626,
+      "prediction": {
+        "tp": 7,
+        "fp": 100,
+        "fn": 0,
+        "best_iou": 0.961574137210846,
+        "num_gt": 7,
+        "num_pred": 107,
+        "matched_gt_ratio": 1.0
+      },
+      "evidence": {
+        "best_iou": 0.961574137210846,
+        "matched_gt_ratio": 1.0,
+        "prior_cos": 0.9964318871498108,
+        "spatial_contrast": 0.23858769237995148,
+        "frequency_contrast": 0.10128875076770782
+      }
+    },
+    {
+      "index": 757,
+      "image_id": 4117,
+      "file_name": "04117.png",
+      "score": 4.905142,
+      "prediction": {
+        "tp": 5,
+        "fp": 76,
+        "fn": 0,
+        "best_iou": 0.9182461500167847,
+        "num_gt": 5,
+        "num_pred": 81,
+        "matched_gt_ratio": 1.0
+      },
+      "evidence": {
+        "best_iou": 0.9182461500167847,
+        "matched_gt_ratio": 1.0,
+        "prior_cos": 0.9972316026687622,
+        "spatial_contrast": 0.3011976182460785,
+        "frequency_contrast": 0.1261172965168953
+      }
+    },
+    {
+      "index": 761,
+      "image_id": 4121,
+      "file_name": "04121.png",
+      "score": 4.898027,
+      "prediction": {
+        "tp": 5,
+        "fp": 75,
+        "fn": 0,
+        "best_iou": 0.9175894856452942,
+        "num_gt": 5,
+        "num_pred": 80,
+        "matched_gt_ratio": 1.0
+      },
+      "evidence": {
+        "best_iou": 0.9175894856452942,
+        "matched_gt_ratio": 1.0,
+        "prior_cos": 0.997272789478302,
+        "spatial_contrast": 0.2912142276763916,
+        "frequency_contrast": 0.13003471493721008
+      }
+    },
+    {
+      "index": 759,
+      "image_id": 4119,
+      "file_name": "04119.png",
+      "score": 4.894414,
+      "prediction": {
+        "tp": 5,
+        "fp": 88,
+        "fn": 0,
+        "best_iou": 0.9236149787902832,
+        "num_gt": 5,
+        "num_pred": 93,
+        "matched_gt_ratio": 1.0
+      },
+      "evidence": {
+        "best_iou": 0.9236149787902832,
+        "matched_gt_ratio": 1.0,
+        "prior_cos": 0.996982753276825,
+        "spatial_contrast": 0.26017946004867554,
+        "frequency_contrast": 0.14580386132001877
+      }
+    },
+    {
+      "index": 804,
+      "image_id": 4164,
+      "file_name": "04164.png",
+      "score": 4.886237,
+      "prediction": {
+        "tp": 7,
+        "fp": 66,
+        "fn": 0,
+        "best_iou": 0.9279093146324158,
+        "num_gt": 7,
+        "num_pred": 73,
+        "matched_gt_ratio": 1.0
+      },
+      "evidence": {
+        "best_iou": 0.9279093146324158,
+        "matched_gt_ratio": 1.0,
+        "prior_cos": 0.9976649284362793,
+        "spatial_contrast": 0.27308350801467896,
+        "frequency_contrast": 0.10930684208869934
+      }
+    },
+    {
+      "index": 492,
+      "image_id": 3852,
+      "file_name": "03852.png",
+      "score": 4.880652,
+      "prediction": {
+        "tp": 6,
+        "fp": 75,
+        "fn": 0,
+        "best_iou": 0.9125118851661682,
+        "num_gt": 6,
+        "num_pred": 81,
+        "matched_gt_ratio": 1.0
+      },
+      "evidence": {
+        "best_iou": 0.9125118851661682,
+        "matched_gt_ratio": 1.0,
+        "prior_cos": 0.9974091649055481,
+        "spatial_contrast": 0.2922239750623703,
+        "frequency_contrast": 0.11966966092586517
+      }
+    },
+    {
+      "index": 489,
+      "image_id": 3849,
+      "file_name": "03849.png",
+      "score": 4.876633,
+      "prediction": {
+        "tp": 5,
+        "fp": 87,
+        "fn": 0,
+        "best_iou": 0.9180060625076294,
+        "num_gt": 5,
+        "num_pred": 92,
+        "matched_gt_ratio": 1.0
+      },
+      "evidence": {
+        "best_iou": 0.9180060625076294,
+        "matched_gt_ratio": 1.0,
+        "prior_cos": 0.99675452709198,
+        "spatial_contrast": 0.26284946501255035,
+        "frequency_contrast": 0.13493846356868744
+      }
+    },
+    {
+      "index": 803,
+      "image_id": 4163,
+      "file_name": "04163.png",
+      "score": 4.870188,
+      "prediction": {
+        "tp": 7,
+        "fp": 65,
+        "fn": 0,
+        "best_iou": 0.919674813747406,
+        "num_gt": 7,
+        "num_pred": 72,
+        "matched_gt_ratio": 1.0
+      },
+      "evidence": {
+        "best_iou": 0.919674813747406,
+        "matched_gt_ratio": 1.0,
+        "prior_cos": 0.9978851675987244,
+        "spatial_contrast": 0.27250558137893677,
+        "frequency_contrast": 0.11015191674232483
+      }
+    },
+    {
+      "index": 758,
+      "image_id": 4118,
+      "file_name": "04118.png",
+      "score": 4.869695,
+      "prediction": {
+        "tp": 5,
+        "fp": 78,
+        "fn": 0,
+        "best_iou": 0.9055238962173462,
+        "num_gt": 5,
+        "num_pred": 83,
+        "matched_gt_ratio": 1.0
+      },
+      "evidence": {
+        "best_iou": 0.9055238962173462,
+        "matched_gt_ratio": 1.0,
+        "prior_cos": 0.9966773390769958,
+        "spatial_contrast": 0.27747517824172974,
+        "frequency_contrast": 0.14113333076238632
+      }
+    }
+  ],
+  "scanned": 840
+}

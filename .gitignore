@@ -162,3 +162,9 @@ cython_debug/
 
 /output/
 /pretrained/
+/M3FD
+/VEDAI
+*.png
+data/
+output_chapter3_m3fd_recover/
+/output_*/

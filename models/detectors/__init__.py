@@ -1,0 +1,2 @@
+from .sam2_prior_alignment_detector import SAM2PriorAlignmentYOLODetector
+

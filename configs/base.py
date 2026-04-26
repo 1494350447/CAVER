@@ -1,3 +1,7 @@
+task = dict(
+    name="bimodal_saliency",
+)
+
 args = dict(
     use_amp=True,
     base_seed=0,
@@ -6,6 +10,7 @@ args = dict(
     batch_size=8,
     num_workers=4,  # 不要太大, 不然运行多个程序同时训练的时候, 会造成数据读入速度受影响
     print_freq=100,  # >0, 保存迭代过程中的信息
+    val_freq=0,  # 0 表示仅在训练结束后评估
 )
 
 optimizers = dict(
